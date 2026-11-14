@@ -1,0 +1,14 @@
+node_modules
+__pycache__/
+*.py[cod]
+.env
+packages/backend/config.json
+packages/backend/data/
+packages/backend/logs/
+packages/frontend/dist/
+*.db
+.idea/
+.vscode/
+
+# 部署配置（含内网代理拓扑，禁止入库）——NAS 部署用该文件经 ssh 管道单独维护
+deploy/config.json

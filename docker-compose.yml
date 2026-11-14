@@ -1,0 +1,66 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: packages/backend/Dockerfile
+    container_name: ai-account-pool-x-backend
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      - AIACCOUNTPOOLX_CONFIG_PATH=/app/runtime/config.json
+      # 容器内默认出网走 NAS mihomo（check_ip_location / tempmail / mailtm 等直连流量）
+      - HTTP_PROXY=http://host.docker.internal:7897
+      - HTTPS_PROXY=http://host.docker.internal:7897
+      - NO_PROXY=127.0.0.1,localhost
+      - no_proxy=127.0.0.1,localhost
+    ports:
+      - "1456:1455"
+    volumes:
+      - ./deploy/config.json:/app/runtime/config.json
+      - backend-runtime:/app/runtime
+      - backend-data:/app/packages/backend/data
+      - backend-logs:/app/packages/backend/logs
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:1455/api/health', timeout=5)",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  frontend:
+    build:
+      context: .
+      dockerfile: packages/frontend/Dockerfile
+    container_name: ai-account-pool-x-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "3081:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  backend-runtime:
+  backend-data:
+  backend-logs:
+
+# NAS 默认地址池已耗尽，显式指定池外网段
+networks:
+  default:
+    name: ai-account-pool-net
+    ipam:
+      config:
+        - subnet: 172.50.0.0/24
