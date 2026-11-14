@@ -101,6 +101,10 @@ class ConfigModel(BaseModel):
     proxy_auto_switch: bool = DEFAULT_PROXY_AUTO_SWITCH
     email_presets: list[dict] = Field(default_factory=get_default_email_presets)
     active_email_preset: int = 0
+    # 邮箱池
+    email_pool_check_interval_hours: int = 24
+    email_pool_target_size: int = 0
+    email_pool_auto_capture: bool = True
     newapi_base_url: Optional[str] = None
     newapi_token: Optional[str] = None
     newapi_user_id: Optional[str] = None

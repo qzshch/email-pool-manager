@@ -40,11 +40,11 @@ def _pick_mailtm_domain(domains: list) -> Optional[str]:
     return None
 
 
-async def create_mailtm_inbox(
+async def create_mailtm_account(
     base_url: str = MAILTM_DEFAULT_BASE_URL,
     timeout: int = 30,
-) -> tuple[Optional[str], Optional[str]]:
-    """创建 mail.tm 临时邮箱，返回 (address, token)。
+) -> tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
+    """创建 mail.tm 账号，返回 (address, password, token, account_id)。
 
     mail.tm 创建接口有独立节流（实测约 1 个/6s，过快返回 HTTP 429），
     因此带退避重试；批量任务请把并发压低。
@@ -57,11 +57,11 @@ async def create_mailtm_inbox(
             )
             if response.status_code != 200:
                 log.error(f"[MAILTM] 获取域名失败: HTTP {response.status_code}")
-                return None, None
+                return None, None, None, None
             domain = _pick_mailtm_domain(_hydra_items(response.json()))
             if not domain:
                 log.error("[MAILTM] 无可用公开域名")
-                return None, None
+                return None, None, None, None
 
             address = (
                 "".join(random.choices(string.ascii_lowercase, k=12))
@@ -90,31 +90,99 @@ async def create_mailtm_inbox(
                     await asyncio.sleep(wait_seconds)
                     continue
                 log.error(f"[MAILTM] 创建账号失败: HTTP {response.status_code} {response.text[:200]}")
-                return None, None
+                return None, None, None, None
             if not account_created:
                 log.error("[MAILTM] 创建账号失败: 限流重试耗尽")
-                return None, None
+                return None, None, None, None
+            account_id = str((response.json() or {}).get("id", "")).strip()
 
-            response = await client.post(
-                f"{base_url.rstrip('/')}/token",
-                headers={
-                    "Accept": "application/json",
-                    "Content-Type": "application/json",
-                },
-                json={"address": address, "password": password},
-            )
-            if response.status_code != 200:
-                log.error(f"[MAILTM] 获取收信 token 失败: HTTP {response.status_code}")
-                return None, None
-            token = str((response.json() or {}).get("token", "")).strip()
+            token = await _mailtm_token_request(client, base_url, address, password)
             if not token:
-                log.error("[MAILTM] 创建邮箱失败: 返回 token 缺失")
-                return None, None
+                return None, None, None, None
             log.success(f"[MAILTM] 创建邮箱成功: {address}")
-            return address, token
+            return address, password, token, account_id
     except Exception as e:
         log.exception("[MAILTM] 创建邮箱异常", e)
-        return None, None
+        return None, None, None, None
+
+
+async def _mailtm_token_request(client: "httpx.AsyncClient", base_url: str, address: str, password: str) -> Optional[str]:
+    try:
+        response = await client.post(
+            f"{base_url.rstrip('/')}/token",
+            headers={
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+            },
+            json={"address": address, "password": password},
+        )
+        if response.status_code != 200:
+            log.error(f"[MAILTM] 获取收信 token 失败: HTTP {response.status_code}")
+            return None
+        token = str((response.json() or {}).get("token", "")).strip()
+        if not token:
+            log.error("[MAILTM] 收信 token 缺失")
+            return None
+        return token
+    except Exception as e:
+        log.exception("[MAILTM] token 请求异常", e)
+        return None
+
+
+async def mailtm_login(
+    base_url: str,
+    address: str,
+    password: str,
+    timeout: int = 30,
+) -> Optional[str]:
+    """用地址+密码换取收信 token（探活即重登，兼做保活）。失败返回 None。"""
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            return await _mailtm_token_request(client, base_url, address, password)
+    except Exception as e:
+        log.exception("[MAILTM] 登录异常", e)
+        return None
+
+
+async def mailtm_delete_account(
+    base_url: str,
+    account_id: str,
+    token: str,
+    timeout: int = 30,
+) -> tuple[bool, str]:
+    """删除 mail.tm 远端账号，返回 (ok, detail)。需要该账号的收信 token。DELETE 端点同样限流，带退避重试。"""
+    if not account_id or not token:
+        return False, "缺少 account_id 或 token"
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            for attempt in range(1, MAILTM_CREATE_MAX_ATTEMPTS + 1):
+                response = await client.delete(
+                    f"{base_url.rstrip('/')}/accounts/{account_id}",
+                    headers={"Accept": "application/json", "Authorization": f"Bearer {token}"},
+                )
+                if response.status_code in (200, 204):
+                    return True, "远端账号已删除"
+                if response.status_code == 429:
+                    wait_seconds = min(60, 10 * attempt)
+                    log.warning(f"[MAILTM] 删除被限流(HTTP 429)，{wait_seconds}s 后重试 ({attempt}/{MAILTM_CREATE_MAX_ATTEMPTS})")
+                    await asyncio.sleep(wait_seconds)
+                    continue
+                if response.status_code == 401:
+                    return False, "token 失效，无法远端删除（可仅本地移除）"
+                return False, f"HTTP {response.status_code}"
+        return False, "限流重试耗尽"
+    except Exception as e:
+        log.exception("[MAILTM] 远端删除异常", e)
+        return False, f"异常: {e}"
+
+
+async def create_mailtm_inbox(
+    base_url: str = MAILTM_DEFAULT_BASE_URL,
+    timeout: int = 30,
+) -> tuple[Optional[str], Optional[str]]:
+    """创建 mail.tm 临时邮箱，返回 (address, token)。兼容旧调用方（OpenAI 注册引擎）。"""
+    address, _password, token, _account_id = await create_mailtm_account(base_url, timeout)
+    return address, token
 
 
 async def get_verification_code_mailtm(

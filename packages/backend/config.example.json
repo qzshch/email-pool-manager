@@ -69,6 +69,9 @@
     }
   ],
   "active_email_preset": 0,
+  "email_pool_check_interval_hours": 24,
+  "email_pool_target_size": 0,
+  "email_pool_auto_capture": true,
   "outlook_client_id": null,
   "outlook_refresh_token": null
 }

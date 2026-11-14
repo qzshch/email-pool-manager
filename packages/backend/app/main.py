@@ -10,10 +10,11 @@ from .config import load_config
 from .database import db
 from .migration import check_and_migrate
 from . import engine  # 确保引擎被注册
+from . import email_pool
 from .log_manager import log_manager
 from .proxy_pool import proxy_pool
 from .platforms.registry import registry
-from .api import task, tokens, config_api, stats, ws, platforms, logs, accounts, newapi
+from .api import task, tokens, config_api, stats, ws, platforms, logs, accounts, newapi, emails
 from .aws_gateway import shutdown_gateway
 from .register_utils import (
     check_ip_location
@@ -46,7 +47,9 @@ async def lifespan(app: FastAPI):
     log_manager.info("AIAccountPoolX 后端已启动")
     platform_names = [p["name"] for p in registry.list_platforms()]
     log_manager.info(f"已注册平台: {', '.join(platform_names)}")
+    email_pool.start_pool_scheduler()
     yield
+    email_pool.stop_pool_scheduler()
     for eng in registry.all_engines():
         if eng.running:
             await eng.stop()
@@ -73,6 +76,7 @@ app.include_router(stats.router)
 app.include_router(logs.router)
 app.include_router(ws.router)
 app.include_router(newapi.router)
+app.include_router(emails.router)
 
 
 @app.get("/auth/callback")

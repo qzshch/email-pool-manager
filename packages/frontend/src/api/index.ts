@@ -109,6 +109,35 @@ export const accountApi = {
   stats: (platform = '') => api.get('/accounts/stats/summary', { params: { platform } }),
 }
 
+export const emailApi = {
+  list: (params?: {
+    provider?: string
+    status?: string
+    search?: string
+    page?: number
+    page_size?: number
+    include_secret?: boolean
+  }) => api.get('/emails', { params }),
+  import: (data: {
+    provider: string
+    address: string
+    password?: string
+    token?: string
+    imap_host?: string
+    imap_port?: number
+    purpose?: string
+  }) => api.post('/emails', data, { timeout: 30000 }),
+  batchCreate: (provider: string, count: number, purpose = '') =>
+    api.post('/emails/batch-create', { provider, count, purpose }, { timeout: 30000 }),
+  taskStatus: () => api.get('/emails/task-status'),
+  check: (id: number) => api.post('/emails/check', { id }, { timeout: 60000 }),
+  checkAll: () => api.post('/emails/check-all', null, { timeout: 30000 }),
+  update: (id: number, data: Record<string, any>) => api.put(`/emails/${id}`, data),
+  remove: (id: number, purgeRemote = false) =>
+    api.delete(`/emails/${id}`, { params: { purge_remote: purgeRemote }, timeout: 30000 }),
+  stats: () => api.get('/emails/stats/summary'),
+}
+
 export function createLogWebSocket(onMessage: (data: any) => void): WebSocket {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
   const ws = new WebSocket(`${protocol}//${window.location.host}/api/ws/logs`)

@@ -152,3 +152,45 @@ class ProxyRecord(Base):
             "is_active": self.is_active,
             "last_used": self.last_used.isoformat() if self.last_used else None,
         }
+
+
+class EmailPoolItem(Base):
+    __tablename__ = "email_pool"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    provider = Column(String(32), nullable=False, index=True)  # mail_tm | tempmail_lol | imap
+    address = Column(String(256), nullable=False)
+    password = Column(String(256), default="")
+    token = Column(Text, default="")  # 收信凭据：mail.tm JWT / tempmail.lol inbox token
+    imap_host = Column(String(128), default="")
+    imap_port = Column(Integer, default=993)
+    mailtm_account_id = Column(String(64), default="")  # mail.tm 远端账号 id，远端删除用
+    status = Column(String(16), default="active", index=True)  # active | dead | unknown
+    status_detail = Column(String(256), default="")
+    purpose = Column(String(128), default="")
+    last_checked_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        Index("idx_emailpool_provider_address", "provider", "address", unique=True),
+    )
+
+    def to_dict(self, include_secret: bool = False) -> dict:
+        result = {
+            "id": self.id,
+            "provider": self.provider,
+            "address": self.address,
+            "imap_host": self.imap_host,
+            "imap_port": self.imap_port,
+            "status": self.status,
+            "status_detail": self.status_detail,
+            "purpose": self.purpose,
+            "last_checked_at": self.last_checked_at.isoformat() if self.last_checked_at else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+        if include_secret:
+            result["password"] = self.password
+            result["token"] = self.token
+        return result

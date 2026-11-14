@@ -27,7 +27,8 @@ except Exception:
 
 from ...config import get_config
 from ...database import db, Account
-from ...email_util import get_verification_code, generate_email, create_tempmail_inbox, create_mailtm_inbox
+from ...email_util import get_verification_code, generate_email, create_tempmail_inbox, create_mailtm_account
+from ...email_pool import capture_email
 from ...log_manager import log_manager as log
 from ...oauth import (
     generate_pkce_codes, generate_state,
@@ -866,13 +867,15 @@ class OpenAIEngine(BaseEngine):
             if not email or not tempmail_token:
                 log.error("[OpenAI] Tempmail.lol 创建邮箱失败")
                 return False
+            capture_email("tempmail_lol", email, tempmail_token)
         elif email_type == "mail_tm":
-            email, tempmail_token = await create_mailtm_inbox(
+            email, mailtm_password, tempmail_token, mailtm_account_id = await create_mailtm_account(
                 cfg.get("mailtm_base_url", "https://api.mail.tm")
             )
             if not email or not tempmail_token:
                 log.error("[OpenAI] Mail.tm 创建邮箱失败")
                 return False
+            capture_email("mail_tm", email, tempmail_token, mailtm_password or "", mailtm_account_id or "")
         else:
             email = generate_email(cfg)
         name = "".join(random.choices(string.ascii_letters, k=random.randint(5, 8))).capitalize()

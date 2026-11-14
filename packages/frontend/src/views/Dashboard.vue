@@ -17,7 +17,25 @@
       class="shrink-0 flex flex-col border-l border-slate-800/50 bg-slate-900/30 backdrop-blur-sm relative z-20"
       :style="{ width: `${rightPanelWidth}px` }"
     >
-      <TokenPanel />
+      <div class="flex border-b border-slate-800/60 shrink-0">
+        <button
+          v-for="tab in rightTabs"
+          :key="tab.key"
+          class="flex-1 px-3 py-2.5 text-xs font-medium transition-colors"
+          :class="
+            activeRightTab === tab.key
+              ? 'text-indigo-400 border-b-2 border-indigo-500 bg-slate-900/40'
+              : 'text-slate-400 hover:text-slate-200 border-b-2 border-transparent'
+          "
+          @click="activeRightTab = tab.key"
+        >
+          {{ tab.label }}
+        </button>
+      </div>
+      <div class="flex-1 min-h-0 overflow-hidden">
+        <TokenPanel v-show="activeRightTab === 'tokens'" />
+        <EmailPanel v-show="activeRightTab === 'emails'" />
+      </div>
     </aside>
   </div>
 </template>
@@ -27,6 +45,13 @@ import { onMounted, onUnmounted, ref } from 'vue'
 import Sidebar from '../components/Sidebar.vue'
 import LogViewer from '../components/LogViewer.vue'
 import TokenPanel from '../components/TokenPanel.vue'
+import EmailPanel from '../components/EmailPanel.vue'
+
+const rightTabs = [
+  { key: 'tokens', label: '账号 Token' },
+  { key: 'emails', label: '邮箱池' },
+]
+const activeRightTab = ref('tokens')
 
 const MIN_RIGHT_WIDTH = 300
 const MAX_RIGHT_WIDTH = 980
