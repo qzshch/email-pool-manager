@@ -27,6 +27,8 @@ MAX_REPLENISH_PER_CYCLE = 10
 
 _task_state = {"running": False, "kind": "", "done": 0, "total": 0, "success": 0, "fail": 0}
 _scheduler_task: Optional[asyncio.Task] = None
+# 全局建号串行锁：mail.tm 创建接口有节流，平台任务与池任务不能并发建号
+_create_lock = asyncio.Lock()
 
 
 def get_task_status() -> dict:
@@ -90,6 +92,35 @@ def capture_email(provider: str, address: str, token: str, password: str = "", a
         return False
 
 
+async def create_one(provider: str, purpose: str = "", detail: str = "手动创建") -> dict:
+    """创建单个邮箱并入池（全局串行，遵守 mail.tm 建号节流）。
+
+    返回 {"ok": bool, "address": str|None, "message": str}。
+    平台引擎（mail_tm / tempmail_lol）与池批量创建都走这里。
+    """
+    cfg = get_config()
+    if provider == "mail_tm":
+        async with _create_lock:
+            address, password, token, account_id = await create_mailtm_account(
+                cfg.get("mailtm_base_url", MAILTM_DEFAULT_BASE_URL)
+            )
+        if not (address and token):
+            return {"ok": False, "address": None, "message": "mail.tm 创建失败"}
+        _insert_item("mail_tm", address, token=token, password=password or "",
+                     account_id=account_id or "", purpose=purpose, detail=detail)
+        return {"ok": True, "address": address, "message": "ok"}
+    if provider == "tempmail_lol":
+        async with _create_lock:
+            address, token = await create_tempmail_inbox(
+                cfg.get("tempmail_base_url", TEMPMAIL_DEFAULT_BASE_URL)
+            )
+        if not (address and token):
+            return {"ok": False, "address": None, "message": "tempmail.lol 创建失败"}
+        _insert_item("tempmail_lol", address, token=token, purpose=purpose, detail=detail)
+        return {"ok": True, "address": address, "message": "ok"}
+    return {"ok": False, "address": None, "message": f"不支持的 provider: {provider}"}
+
+
 async def batch_create(provider: str, count: int, purpose: str = "") -> dict:
     if provider not in ("mail_tm", "tempmail_lol"):
         return {"ok": False, "message": "provider 仅支持 mail_tm / tempmail_lol（IMAP 邮箱请用手动导入）"}
@@ -98,23 +129,12 @@ async def batch_create(provider: str, count: int, purpose: str = "") -> dict:
         return {"ok": False, "message": "已有池任务在执行，请稍后再试"}
     _task_state.update(running=True, kind="batch_create", done=0, total=count, success=0, fail=0)
     log.info(f"[EMAILPOOL] 批量创建开始: provider={provider} count={count}")
-    cfg = get_config()
-    base_url = (
-        cfg.get("mailtm_base_url", MAILTM_DEFAULT_BASE_URL)
-        if provider == "mail_tm"
-        else cfg.get("tempmail_base_url", TEMPMAIL_DEFAULT_BASE_URL)
-    )
     try:
         for i in range(count):
-            address = password = token = account_id = None
-            if provider == "mail_tm":
-                address, password, token, account_id = await create_mailtm_account(base_url)
-            else:
-                address, token = await create_tempmail_inbox(base_url)
-            if address and token:
-                _insert_item(provider, address, token=token, password=password or "", account_id=account_id or "", purpose=purpose)
+            result = await create_one(provider, purpose=purpose, detail="池批量创建")
+            if result["ok"]:
                 _task_state["success"] += 1
-                log.success(f"[EMAILPOOL] 进度 {i + 1}/{count}: {address}")
+                log.success(f"[EMAILPOOL] 进度 {i + 1}/{count}: {result['address']}")
             else:
                 _task_state["fail"] += 1
             _task_state["done"] += 1
@@ -205,14 +225,12 @@ async def _replenish_mailtm(cfg: dict, target: int) -> None:
     if deficit <= 0:
         return
     log.info(f"[EMAILPOOL] 自动补池: mail.tm 存活 {alive_count}/{target}，本轮补建 {deficit}")
-    base_url = cfg.get("mailtm_base_url", MAILTM_DEFAULT_BASE_URL)
     for _ in range(deficit):
-        address, password, token, account_id = await create_mailtm_account(base_url)
-        if not (address and token):
+        result = await create_one("mail_tm", detail="自动补池")
+        if not result["ok"]:
             log.warning("[EMAILPOOL] 自动补池中断: 创建失败")
             break
-        _insert_item("mail_tm", address, token=token, password=password or "", account_id=account_id or "", detail="自动补池")
-        log.success(f"[EMAILPOOL] 补池成功: {address}")
+        log.success(f"[EMAILPOOL] 补池成功: {result['address']}")
 
 
 async def delete_item(item_id: int, purge_remote: bool = False) -> dict:
