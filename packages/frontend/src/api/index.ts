@@ -133,6 +133,8 @@ export const emailApi = {
   check: (id: number) => api.post('/emails/check', { id }, { timeout: 60000 }),
   checkAll: () => api.post('/emails/check-all', null, { timeout: 30000 }),
   update: (id: number, data: Record<string, any>) => api.put(`/emails/${id}`, data),
+  messages: (id: number, limit = 20) =>
+    api.get(`/emails/${id}/messages`, { params: { limit }, timeout: 30000 }),
   remove: (id: number, purgeRemote = false) =>
     api.delete(`/emails/${id}`, { params: { purge_remote: purgeRemote }, timeout: 30000 }),
   stats: () => api.get('/emails/stats/summary'),

@@ -68,7 +68,7 @@ async def list_emails(
 @router.post("")
 async def import_email(data: EmailImport):
     if data.provider not in email_pool.VALID_PROVIDERS:
-        raise HTTPException(status_code=400, detail="provider 仅支持 mail_tm / tempmail_lol / imap")
+        raise HTTPException(status_code=400, detail="provider 仅支持 mail_tm / tempmail_lol / imap / corekiln")
     address = data.address.strip()
     if not address or "@" not in address:
         raise HTTPException(status_code=400, detail="地址无效")
@@ -138,6 +138,12 @@ async def update_email(item_id: int, data: PurposeUpdate):
 @router.delete("/{item_id}")
 async def delete_email(item_id: int, purge_remote: bool = False):
     return await email_pool.delete_item(item_id, purge_remote)
+
+
+@router.get("/{item_id}/messages")
+async def email_messages(item_id: int, limit: int = 20):
+    """读取池内邮箱的最新邮件（corekiln 自有域名邮箱支持）。"""
+    return await email_pool.get_messages(item_id, limit=limit)
 
 
 @router.get("/stats/summary")

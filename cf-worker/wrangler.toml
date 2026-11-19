@@ -1,0 +1,14 @@
+name = "email-pool-worker"
+main = "src/worker.js"
+compatibility_date = "2026-11-01"
+
+# D1：部署前用 `npx wrangler d1 create email-pool` 创建并回填 database_id
+[[d1_databases]]
+binding = "DB"
+database_name = "email-pool"
+database_id = "REPLACE_WITH_D1_ID"
+
+# 自定义域名路由（zone 迁移到 Cloudflare 后由部署脚本或 wrangler routes 添加）
+# [[routes]]
+# pattern = "email-api.corekiln.com/*"
+# zone_name = "corekiln.com"

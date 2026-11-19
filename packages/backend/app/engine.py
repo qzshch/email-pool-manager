@@ -1,4 +1,5 @@
 """ 平台引擎注册 """
+from .platforms.corekiln.engine import CorekilnEngine
 from .platforms.mail_tm.engine import MailTmEngine
 from .platforms.openai.engine import OpenAIEngine
 from .platforms.registry import registry
@@ -13,3 +14,7 @@ registry.register(mail_tm_engine)
 
 tempmail_lol_engine = TempmailLolEngine()
 registry.register(tempmail_lol_engine)
+
+# 自有域名邮箱（Cloudflare Email Worker catch-all）
+corekiln_engine = CorekilnEngine()
+registry.register(corekiln_engine)

@@ -72,6 +72,9 @@
   "email_pool_check_interval_hours": 24,
   "email_pool_target_size": 0,
   "email_pool_auto_capture": true,
+  "corekiln_base_url": null,
+  "corekiln_api_token": null,
+  "corekiln_domain": "corekiln.com",
   "outlook_client_id": null,
   "outlook_refresh_token": null
 }

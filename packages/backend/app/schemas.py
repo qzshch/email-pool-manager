@@ -105,6 +105,10 @@ class ConfigModel(BaseModel):
     email_pool_check_interval_hours: int = 24
     email_pool_target_size: int = 0
     email_pool_auto_capture: bool = True
+    # 自有域名邮箱（corekiln / Cloudflare Email Worker）
+    corekiln_base_url: Optional[str] = None
+    corekiln_api_token: Optional[str] = None
+    corekiln_domain: str = "corekiln.com"
     newapi_base_url: Optional[str] = None
     newapi_token: Optional[str] = None
     newapi_user_id: Optional[str] = None

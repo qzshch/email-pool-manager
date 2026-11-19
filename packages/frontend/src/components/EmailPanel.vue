@@ -26,6 +26,7 @@
         <el-select v-model="createProvider" class="!w-32" size="small">
           <el-option label="Mail.tm" value="mail_tm" />
           <el-option label="Tempmail.lol" value="tempmail_lol" />
+          <el-option label="Corekiln" value="corekiln" />
         </el-select>
         <el-input-number v-model="createCount" :min="1" :max="50" size="small" class="!w-24" controls-position="right" />
         <button
@@ -72,6 +73,7 @@
         <el-select v-model="providerFilter" size="small" class="!w-32" clearable placeholder="类型">
           <el-option label="Mail.tm" value="mail_tm" />
           <el-option label="Tempmail.lol" value="tempmail_lol" />
+          <el-option label="Corekiln" value="corekiln" />
           <el-option label="IMAP" value="imap" />
         </el-select>
         <span v-if="taskRunning" class="text-[10px] text-amber-400 ml-auto">
@@ -98,6 +100,12 @@
         >
           {{ savingCfg ? '保存中' : '保存设置' }}
         </button>
+      </div>
+      <div class="rounded-lg border border-slate-800/60 bg-slate-900/20 px-3 py-2 mt-2 flex flex-wrap gap-2 items-center text-xs text-slate-400">
+        <span class="text-[10px] uppercase tracking-wider text-slate-500">自有域名</span>
+        <el-input v-model="poolCfg.corekilnDomain" size="small" class="!w-40" placeholder="corekiln.com" />
+        <el-input v-model="poolCfg.corekilnBaseUrl" size="small" class="!w-56" placeholder="https://email-api.corekiln.com" />
+        <el-input v-model="poolCfg.corekilnApiToken" size="small" class="!w-44" type="password" show-password placeholder="Worker Token" />
       </div>
     </div>
 
@@ -147,6 +155,14 @@
                 >
                   <span v-if="checkingId === row.id" class="inline-block w-3 h-3 border-2 border-slate-500 border-t-transparent rounded-full animate-spin"></span>
                   <el-icon v-else><CircleCheck /></el-icon>
+                </button>
+              </el-tooltip>
+              <el-tooltip v-if="row.provider === 'corekiln'" content="查看邮件" placement="top">
+                <button
+                  class="p-1 rounded text-slate-400 hover:text-sky-400 hover:bg-slate-800"
+                  @click="openMessages(row)"
+                >
+                  <el-icon><Message /></el-icon>
                 </button>
               </el-tooltip>
               <el-tooltip content="编辑用途" placement="top">
@@ -220,6 +236,26 @@
       </template>
     </el-dialog>
 
+    <!-- 查看邮件对话框 -->
+    <el-dialog v-model="msgDialogVisible" :title="`邮件 - ${msgAddress}`" width="640px" append-to-body>
+      <div v-if="msgLoading" class="text-xs text-slate-400 py-4 text-center">加载中...</div>
+      <div v-else-if="!messages.length" class="text-xs text-slate-500 py-4 text-center">暂无邮件</div>
+      <div v-else class="space-y-2 max-h-[60vh] overflow-y-auto">
+        <div
+          v-for="m in messages"
+          :key="m.id"
+          class="rounded-lg border border-slate-800/60 bg-slate-900/30 p-3"
+        >
+          <div class="flex justify-between text-[10px] text-slate-500">
+            <span class="truncate mr-2">{{ m.sender }}</span>
+            <span class="shrink-0">{{ shortTime(m.received_at) }}</span>
+          </div>
+          <div class="text-xs text-slate-200 mt-1">{{ m.subject || '(无主题)' }}</div>
+          <pre class="text-[10px] text-slate-400 mt-1 whitespace-pre-wrap max-h-40 overflow-y-auto">{{ m.preview }}</pre>
+        </div>
+      </div>
+    </el-dialog>
+
     <!-- 编辑用途对话框 -->
     <el-dialog v-model="editDialogVisible" title="编辑用途" width="380px" append-to-body>
       <el-input v-model="editPurpose" placeholder="用途备注" />
@@ -234,7 +270,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { CircleCheck, Delete, Edit, Refresh, Search } from '@element-plus/icons-vue'
+import { CircleCheck, Delete, Edit, Message, Refresh, Search } from '@element-plus/icons-vue'
 import { emailApi, configApi } from '../api'
 import { useAppStore } from '../stores/app'
 
@@ -255,7 +291,14 @@ const taskRunning = computed(() => taskStatus.value?.running === true)
 const createProvider = ref('mail_tm')
 const createCount = ref(3)
 
-const poolCfg = reactive({ checkIntervalHours: 24, targetSize: 0, autoCapture: true })
+const poolCfg = reactive({
+  checkIntervalHours: 24,
+  targetSize: 0,
+  autoCapture: true,
+  corekilnDomain: 'corekiln.com',
+  corekilnBaseUrl: '',
+  corekilnApiToken: '',
+})
 const savingCfg = ref(false)
 
 const checkingId = ref<number | null>(null)
@@ -267,6 +310,27 @@ const editDialogVisible = ref(false)
 const editPurpose = ref('')
 let editId = 0
 
+const msgDialogVisible = ref(false)
+const msgLoading = ref(false)
+const msgAddress = ref('')
+const messages = ref<any[]>([])
+
+async function openMessages(row: any) {
+  msgAddress.value = row.address
+  messages.value = []
+  msgDialogVisible.value = true
+  msgLoading.value = true
+  try {
+    const { data } = await emailApi.messages(row.id)
+    messages.value = data.items || []
+    if (!data.ok) ElMessage.warning(data.message || '读取邮件失败')
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.detail || '读取邮件失败')
+  } finally {
+    msgLoading.value = false
+  }
+}
+
 const tableHeaderCellStyle = computed(() => ({
   background: store.theme === 'dark' ? '#1e293b' : '#f1f5f9',
   color: store.theme === 'dark' ? '#94a3b8' : '#475569',
@@ -274,7 +338,7 @@ const tableHeaderCellStyle = computed(() => ({
 }))
 
 function providerLabel(p: string) {
-  return p === 'mail_tm' ? 'Mail.tm' : p === 'tempmail_lol' ? 'Tempmail' : 'IMAP'
+  return p === 'mail_tm' ? 'Mail.tm' : p === 'tempmail_lol' ? 'Tempmail' : p === 'corekiln' ? 'Corekiln' : 'IMAP'
 }
 function statusLabel(s: string) {
   return s === 'active' ? '存活' : s === 'dead' ? '死亡' : '待检'
@@ -425,6 +489,9 @@ async function loadPoolCfg() {
     poolCfg.checkIntervalHours = data.email_pool_check_interval_hours ?? 24
     poolCfg.targetSize = data.email_pool_target_size ?? 0
     poolCfg.autoCapture = data.email_pool_auto_capture !== false
+    poolCfg.corekilnDomain = data.corekiln_domain || 'corekiln.com'
+    poolCfg.corekilnBaseUrl = data.corekiln_base_url || ''
+    poolCfg.corekilnApiToken = data.corekiln_api_token || ''
   } catch {}
 }
 
@@ -437,6 +504,9 @@ async function savePoolCfg() {
       email_pool_check_interval_hours: poolCfg.checkIntervalHours,
       email_pool_target_size: poolCfg.targetSize,
       email_pool_auto_capture: poolCfg.autoCapture,
+      corekiln_domain: poolCfg.corekilnDomain,
+      corekiln_base_url: poolCfg.corekilnBaseUrl || null,
+      corekiln_api_token: poolCfg.corekilnApiToken || null,
     })
     ElMessage.success('池设置已保存')
   } catch (e: any) {

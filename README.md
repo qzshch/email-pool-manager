@@ -10,7 +10,8 @@
 
 ### 邮箱池管理（本项目新增的重点）
 
-- **平台化批量注册**：左侧平台列表新增 `Mail.tm` / `Tempmail.lol` 两个平台，复用标准任务控件（数量/间隔/并发/启停/成功失败统计），`count=0` 无限创建；任务创建的邮箱自动入池
+- **平台化批量注册**：左侧平台列表新增 `Mail.tm` / `Tempmail.lol` / `Corekiln`（自有域名 catch-all）三个平台，复用标准任务控件（数量/间隔/并发/启停/成功失败统计），`count=0` 无限创建；任务创建的邮箱自动入池
+- **自有域名收信（Corekiln）**：仓库 `cf-worker/` 提供 Cloudflare Email Worker（Email Routing catch-all → D1 存信 → Bearer API），池服务可作为 `corekiln` provider 建址、探活、在线查看邮件；域名与第三方无关，不会因临时邮箱域名轮换失效
 - **批量自动注册**：mail.tm（内置 ~6s/个 节流与 429 退避）、Tempmail.lol 一键批量建号；IMAP 邮箱（QQ/Outlook 等）手动导入纳管
 - **托管**：邮箱实体落库（地址/密码/收信 token/远端账号 id），支持用途备注、搜索过滤、分页
 - **存活检测**：mail.tm 探活 = 重登校验（兼做保活）+ 域名下线检查；Tempmail.lol 探活 = inbox 可用性（该服务邮箱天然短时效，判死属预期）；IMAP 探活 = 登录校验

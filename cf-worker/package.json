@@ -1,0 +1,9 @@
+{
+  "name": "email-pool-worker",
+  "private": true,
+  "type": "module",
+  "description": "Cloudflare Email Worker for email-pool-manager: stores inbound mail per address into D1 and exposes a small bearer-auth API.",
+  "dependencies": {
+    "postal-mime": "^2.4.4"
+  }
+}

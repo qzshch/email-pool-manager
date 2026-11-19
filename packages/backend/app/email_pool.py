@@ -6,11 +6,14 @@
 - 批量创建串行执行（mail.tm 建号节流 ~6s/个，退避内置在 mailtm.py）
 """
 import asyncio
+import random
+import string
 from datetime import datetime
 from typing import Optional
 
 from .config import get_config
 from .database import EmailPoolItem, db
+from .email_utils.corekiln import corekiln_list_messages, corekiln_register_address
 from .email_utils.mailtm import (
     MAILTM_DEFAULT_BASE_URL,
     create_mailtm_account,
@@ -21,7 +24,7 @@ from .email_utils.tempmail import create_tempmail_inbox
 from .log_manager import log_manager as log
 
 TEMPMAIL_DEFAULT_BASE_URL = "https://api.tempmail.lol/v2"
-VALID_PROVIDERS = ("mail_tm", "tempmail_lol", "imap")
+VALID_PROVIDERS = ("mail_tm", "tempmail_lol", "imap", "corekiln")
 MAX_BATCH_CREATE = 50
 MAX_REPLENISH_PER_CYCLE = 10
 
@@ -118,12 +121,27 @@ async def create_one(provider: str, purpose: str = "", detail: str = "手动创�
             return {"ok": False, "address": None, "message": "tempmail.lol 创建失败"}
         _insert_item("tempmail_lol", address, token=token, purpose=purpose, detail=detail)
         return {"ok": True, "address": address, "message": "ok"}
+    if provider == "corekiln":
+        # 自有域名 catch-all：地址无需远端创建，Worker 仅登记；未登记也能收信
+        domain = str(cfg.get("corekiln_domain", "corekiln.com") or "corekiln.com").strip()
+        base_url = str(cfg.get("corekiln_base_url") or "").strip()
+        api_token = str(cfg.get("corekiln_api_token") or "").strip()
+        if not (base_url and api_token):
+            return {"ok": False, "address": None, "message": "未配置 corekiln_base_url/corekiln_api_token"}
+        local = "".join(random.choices(string.ascii_lowercase, k=12)) + str(random.randint(100, 999))
+        address = f"{local}@{domain}"
+        registered, detail = await corekiln_register_address(base_url, api_token, address)
+        _insert_item(
+            "corekiln", address, purpose=purpose,
+            detail=f"corekiln catch-all · {detail}",
+        )
+        return {"ok": True, "address": address, "message": "ok" if registered else f"登记失败({detail})，catch-all 仍可收信"}
     return {"ok": False, "address": None, "message": f"不支持的 provider: {provider}"}
 
 
 async def batch_create(provider: str, count: int, purpose: str = "") -> dict:
-    if provider not in ("mail_tm", "tempmail_lol"):
-        return {"ok": False, "message": "provider 仅支持 mail_tm / tempmail_lol（IMAP 邮箱请用手动导入）"}
+    if provider not in ("mail_tm", "tempmail_lol", "corekiln"):
+        return {"ok": False, "message": "provider 仅支持 mail_tm / tempmail_lol / corekiln（IMAP 邮箱请用手动导入）"}
     count = max(1, min(int(count or 0), MAX_BATCH_CREATE))
     if _task_state["running"]:
         return {"ok": False, "message": "已有池任务在执行，请稍后再试"}
@@ -152,6 +170,14 @@ async def _check_item(provider: str, address: str, password: str, token: str,
         return await check_tempmail_alive(cfg.get("tempmail_base_url", TEMPMAIL_DEFAULT_BASE_URL), token)
     if provider == "imap":
         return check_imap_alive(imap_host, imap_port or 993, address, password)
+    if provider == "corekiln":
+        base_url = str(cfg.get("corekiln_base_url") or "").strip()
+        api_token = str(cfg.get("corekiln_api_token") or "").strip()
+        ok, items, detail = await corekiln_list_messages(base_url, api_token, address, limit=1)
+        if ok:
+            has_mail = "有历史邮件" if items else "暂无邮件"
+            return True, f"worker API 可达（{has_mail}）", None
+        return False, f"worker 不可达: {detail}", None
     return False, f"未知 provider: {provider}", None
 
 
@@ -250,6 +276,25 @@ async def delete_item(item_id: int, purge_remote: bool = False) -> dict:
         detail = f"本地已移除；远端删除{'成功' if ok else '失败: ' + remote_detail}"
     log.info(f"[EMAILPOOL] 删除 {address}: {detail}")
     return {"ok": True, "message": detail}
+
+
+async def get_messages(item_id: int, limit: int = 20) -> dict:
+    """读取某个池内邮箱的最新邮件（目前仅 corekiln 支持在线读信）。"""
+    cfg = get_config()
+    with db.get_session() as session:
+        item = session.get(EmailPoolItem, item_id)
+        if not item:
+            return {"ok": False, "items": [], "message": "邮箱不存在"}
+        if item.provider != "corekiln":
+            return {"ok": False, "items": [], "message": "仅 corekiln 邮箱支持在线查看邮件"}
+        address = item.address
+    ok, items, detail = await corekiln_list_messages(
+        str(cfg.get("corekiln_base_url") or ""),
+        str(cfg.get("corekiln_api_token") or ""),
+        address,
+        limit=limit,
+    )
+    return {"ok": ok, "items": items or [], "message": detail}
 
 
 def _get_interval_hours() -> int:
